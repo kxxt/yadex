@@ -1,0 +1,12 @@
+[network]
+address = "0.0.0.0"
+port = 8880
+
+[template]
+header_file = "header.html"
+footer_file = "footer.html"
+error_file = "error.html"
+
+[service]
+limit = 50
+root = "."
