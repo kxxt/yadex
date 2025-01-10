@@ -2,7 +2,7 @@ use clap::Parser;
 use cmdline::Cmdline;
 use config::Config;
 use figment::providers::{Format, Toml};
-use server::root;
+use server::{App, Template};
 use tracing_subscriber::{filter::EnvFilter, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 mod cmdline;
@@ -30,13 +30,12 @@ async fn main() -> color_eyre::Result<()> {
     let cmdline = Cmdline::parse();
     tracing::info!("cmdline: {:?}", cmdline);
     let config: Config = figment::Figment::new()
-        .merge(Toml::file(cmdline.config))
+        .merge(Toml::file(&cmdline.config))
         .extract()?;
-    let app = Router::new().route("/", get(root));
-
+    let template = Template::from_config(&cmdline.config, config.template)?;
     let listener =
         tokio::net::TcpListener::bind((config.network.address, config.network.port)).await?;
     tracing::info!("Yadex listening on {}", listener.local_addr()?);
-    axum::serve(listener, app).await?;
+    App::serve(config.service, listener, template).await?;
     Ok(())
 }
