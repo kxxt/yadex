@@ -2,8 +2,8 @@ use std::{
     borrow::Cow,
     env::set_current_dir,
     fmt::{Display, Write},
-    io,
-    os::unix::fs::chroot,
+    fs, io,
+    os::unix::fs::{chroot, MetadataExt},
     path::{Path, PathBuf},
 };
 
@@ -14,9 +14,10 @@ use axum::{
     routing::get,
     Router,
 };
+use chrono::Utc;
 use futures_util::StreamExt as SExt;
 use snafu::{ResultExt, Snafu};
-use tokio::net::TcpListener;
+use tokio::{fs::DirEntry, net::TcpListener};
 use tokio_stream::wrappers::ReadDirStream;
 use tracing::error;
 
@@ -102,17 +103,54 @@ pub struct AppState {
 
 struct DirEntryInfo<'a> {
     name: Cow<'a, str>,
+    is_dir: bool,
+    size: u64,
+    mtime: Option<chrono::DateTime<Utc>>,
+}
+
+pub fn append_slash_for_dir(name: Cow<'_, str>, is_dir: bool) -> Cow<'_, str> {
+    if is_dir {
+        match name {
+            Cow::Borrowed(s) => Cow::Owned(format!("{s}/")),
+            Cow::Owned(mut s) => {
+                s.push('/');
+                Cow::Owned(s)
+            }
+        }
+    } else {
+        name
+    }
 }
 
 impl Display for DirEntryInfo<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            r#"<tr><td><a href="{attribute_safe_name}">{html_safe_name}</a></td></tr>"#,
-            html_safe_name = html_escape::encode_safe(&self.name),
-            attribute_safe_name = html_escape::encode_double_quoted_attribute(&self.name)
+            r#"<tr>
+                   <td><a href="{attribute_safe_name}">{html_safe_name}</a></td>
+                   <td>{datetime}</td>
+                   <td>{filesize}</td>
+               </tr>"#,
+            html_safe_name =
+                append_slash_for_dir(html_escape::encode_safe(&self.name), self.is_dir),
+            attribute_safe_name = append_slash_for_dir(
+                html_escape::encode_double_quoted_attribute(&self.name),
+                self.is_dir
+            ),
+            datetime = self
+                .mtime
+                .map(|t| t.to_string())
+                .map(Cow::Owned)
+                .unwrap_or(Cow::Borrowed("Unknown")),
+            filesize = self.size
         )
     }
+}
+
+pub async fn direntry_info(val: Result<DirEntry, io::Error>) -> Option<(DirEntry, fs::Metadata)> {
+    let val = val.ok()?;
+    let meta = val.metadata().await.ok()?;
+    Some((val, meta))
 }
 
 #[axum::debug_handler]
@@ -132,22 +170,26 @@ pub async fn directory_listing(
     let mut html = state.header;
 
     while let Some((idx, r)) = read_dir.next().await {
-        if r.and_then(|d| {
-            write!(
-                html,
-                "{}",
-                DirEntryInfo {
-                    name: d.file_name().to_string_lossy(),
-                }
-            )
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "fmt error"))
-        })
-        .is_err()
-        {
-            html.push_str(
-                r#"<tr class="entry-error"><td>error occurred while getting this entry</td></tr>"#,
-            );
+        match direntry_info(r).await {
+            Some((d, meta)) => {
+                let _ = write!(
+                    html,
+                    "{}",
+                    DirEntryInfo {
+                        name: d.file_name().to_string_lossy(),
+                        is_dir: meta.is_dir(),
+                        size: meta.size(),
+                        mtime: chrono::DateTime::from_timestamp(meta.mtime(), 0)
+                    }
+                );
+            }
+            None => {
+                html.push_str(
+                    r#"<tr class="entry-error"><td>error occurred while getting this entry</td></tr>"#,
+                );
+            }
         }
+
         if idx == state.limit - 1 {
             // Reached limit, results might be truncated.
             html.push_str(r#"<tr class="truncated-warning"><td>Too many entries. This list might be truncated.</td></tr>"#);
