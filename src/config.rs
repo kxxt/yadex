@@ -17,8 +17,7 @@ pub struct NetworkConfig {
 
 #[derive(Serialize, Deserialize)]
 pub struct TemplateConfig {
-    pub header_file: PathBuf,
-    pub footer_file: PathBuf,
+    pub index_file: PathBuf,
     pub error_file: PathBuf,
 }
 

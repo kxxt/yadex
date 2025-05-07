@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+
+<head></head>
+
+<body>
+    {{#if maybe_truncated}}
+    <div class="warning">
+        Too many items. This list might be truncated.
+    </div>
+    {{/if}}
+
+    <table>
+        <tr>
+            <td><a href="..">..</a></td>
+        </tr>
+        {{#each entry}}
+        <tr>
+            <td><a href="{{this.href}}">{{this.name}}</a></td>
+            <td>{{this.datetime}}</td>
+            <td>{{this.size}}</td>
+        </tr>
+        {{/each}}
+    </table>
+</body>
+
+</html>
