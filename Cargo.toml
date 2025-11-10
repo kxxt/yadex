@@ -2,6 +2,7 @@
 name = "yadex"
 version = "0.1.0"
 description = "Yet another index page"
+license = "GPL-3.0-or-later"
 edition = "2021"
 
 [dependencies]
